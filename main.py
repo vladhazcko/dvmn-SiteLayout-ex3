@@ -1,9 +1,14 @@
-import requests
+import os
+import re
 from pathlib import Path
+
+import requests
 from bs4 import BeautifulSoup
 from pathvalidate import sanitize_filename
+from urllib.parse import urljoin
 
-import os, re
+BOOK_DIR = 'books'
+IMG_DIR = 'images'
 
 
 class ToluluBook():
@@ -15,8 +20,8 @@ class ToluluBook():
         self.html_soup = self.get_html_soup()
         self.title = self.get_title()
         self.author = self.get_author()
-        self.img_src = self.get_img_src()
-        self.download_url = self.get_download_url()
+        self.img_url = self.get_img_url()
+        self.txt_file_url = self.get_txt_file_url()
 
     def get_response(self):
         url = f'http://tululu.org/b{self.id}/'
@@ -53,34 +58,54 @@ class ToluluBook():
         author = self.html_soup.find('h1').find('a').text
         return author
 
-    def get_img_src(self):
+    def get_img_url(self):
         if not self.is_valid():
             return None
         img_tag = self.html_soup.find('table', class_='d_book').find('img')
-        img_src = img_tag['src'] if 'http' in img_tag else self.HOST + img_tag['src']
-        return img_src
+        img_url = urljoin(self.HOST, img_tag['src'])
+        return img_url
 
-    def get_download_url(self):
+    def get_txt_file_url(self):
         url = f'{self.HOST}/txt.php?id={self.id}'
         return url
 
-    def get_filename(self):
+    def get_file_name(self):
         return f'{self.id}. {self.title}'
 
 
-def download_txt(url, filename, folder='books/'):
-    path = os.path.join(folder, sanitize_filename(filename)) + '.txt'
+def download_file(url, filename, file_extension, folder):
+    path = os.path.join(folder, sanitize_filename(filename)) + file_extension
     response = requests.get(url)
     response.raise_for_status()
-
-    with open(path, 'w') as txt_file:
-        txt_file.write(response.text)
+    with open(path, 'wb') as txt_file:
+        txt_file.write(response.content)
     return path
 
 
+def download_img(url, folder=IMG_DIR):
+    path = url.split("/")[-1]
+    filename, file_extension = os.path.splitext(path)
+    download_file(
+        url=url,
+        filename=filename,
+        file_extension=file_extension,
+        folder=folder
+    )
+
+
+def download_txt(url, filename, folder=BOOK_DIR):
+    file_extension = '.txt'
+    download_file(
+        url=url,
+        filename=filename,
+        file_extension=file_extension,
+        folder=folder
+    )
+
+
 def main():
-    books_directory = 'books'
-    Path(books_directory).mkdir(parents=True, exist_ok=True)
+    Path(BOOK_DIR).mkdir(parents=True, exist_ok=True)
+    Path(IMG_DIR).mkdir(parents=True, exist_ok=True)
 
     books_count = 10
     for book_id in range(1, 1 + books_count):
@@ -89,10 +114,11 @@ def main():
             continue
 
         print(book.title)
-        print(book.img_src)
-        print(book.author)
-        file_name = book.get_filename()
-        print(download_txt(book.download_url, file_name))
+        print(book.img_url)
+        txt_name = book.get_file_name()
+
+        download_txt(url=book.txt_file_url, filename=txt_name)
+        download_img(url=book.img_url)
 
 
 if __name__ == '__main__':
